@@ -4,9 +4,21 @@
 #include<string.h>
 #include<stdbool.h>
 
-//==============================================================================
-// DATA STRUCTURES
-//==============================================================================
+//--------------------------------------------------------------------------------------------------------------
+// CONSTANTS
+#define SCORE_DIFFERENCE_THRESHOLD 3
+#define WIN_THRESHOLD_PART1 5
+#define LOSS_THRESHOLD_PART1 5
+#define CONSECUTIVE_WIN_THRESHOLD_PART1 3
+#define CONSECUTIVE_LOSS_THRESHOLD_PART1 3
+#define MAX_VALUES_PART1 12
+#define MAX_VALUES_PART2 16
+#define WIN_THRESHOLD_PART2 2
+#define LOSS_THRESHOLD_PART2 2
+#define CONSECUTIVE_WIN_THRESHOLD_PART2 2
+
+//--------------------------------------------------------------------------------------------------------------
+// RECORDS
 
 typedef struct Player {
     char name[50];
@@ -18,55 +30,122 @@ typedef struct Player {
     int roundLost;    
     int consecutiveWins;      
     int consecutiveLosses;
+    // Additional tracking for Part I and II
+    int winsPartI;
+    int lossesPartI;
+    int winsPartII;
+    int lossesPartII;
 } Player;
 
-typedef struct element {
-    Player info;
+typedef struct element{
+    struct Player info;
     struct element *next; 
 } element;
 
 typedef struct Queue {
     element *head;
     element *tail;
-    int size;  // Cache size for O(1) access
 } Queue;
 
 typedef element *Stack;
 typedef element *Elist;
 
-typedef struct GameStats {
-    int totalRounds;
-    int partIRounds;
-    int partIIRounds;
+// Round history structure
+typedef struct Round {
+    int roundNumber;
+    char player1Name[50];
+    char player2Name[50];
+    int player1ID;
+    int player2ID;
+    int player1Score;
+    int player2Score;
+    char winner[50];
     time_t startTime;
     time_t endTime;
-} GameStats;
+    int strategy;
+    struct Round *next;
+} Round;
 
-//==============================================================================
-// QUEUE OPERATIONS - O(1) for all operations
-//==============================================================================
+typedef struct Round *RoundHistory;
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// FUNCTION PROTOTYPES
+
+// Queue operations
+void Initqueue(Queue *F);
+void Enqueue(Queue *F, Player p);
+void Dequeue(Queue *F, Player *p);
+bool EmptyQueue(Queue F);
+
+// Stack operations
+void InitStack(Stack *S);
+void PUSH(Stack *S, Player P);
+void POP(Stack *S, Player *P);
+bool EmptyStack(Stack S);
+Player TOPStack(Stack S);
+
+// List operations
+void insertSortedLG(Elist *LG, Player p);
+
+// Game logic functions
+int randomNumber();
+void AutoFill(Queue *F, int n);
+void updatePlayersStatistics(Player *P1, Player *P2, int strategy);
+bool GetPlayer(Queue *F1, Queue *F, Queue *F3, Player *p, Stack *LP);
+bool isGameOver(Queue F, Queue F1, Queue F3);
+
+// Part I functions
+int sumOfDigits(int value);
+void playRoundPartOne(Player *P1, Player *P2);
+void classifyPartOne(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG);
+
+// Part II functions
+int gcd(int a, int b);
+bool digitAppears(int digit, int number);
+bool gcdDigitCondition(int a, int b);
+void playRoundPartTwo(Player *P1, Player *P2);
+void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG);
+bool forcedGameOver(int strategy2Rounds, int n);
+
+// Display functions
+void displayQueue(Queue F, char* name);
+void displayList(Elist LG);
+void displayStack(Stack LP);
+void displayAllQueuesAndLists(Queue F, Queue F1, Queue F3, Elist LG, Stack LP);
+void displayTop3Winners(Elist LG);
+void displayRoundHistory(RoundHistory history);
+
+// Query functions
+void showPlayersWithNoWins(Elist LG, Stack LP);
+void showPlayersByWinsPartI(Elist LG, Stack LP, int wins);
+void showPlayersByLossesPartI(Elist LG, Stack LP, int losses);
+void showPlayersByWinsPartII(Elist LG, Stack LP, int wins);
+void showPlayersByLossesPartII(Elist LG, Stack LP, int losses);
+
+// Round history functions
+void addRound(RoundHistory *history, int roundNum, Player p1, Player p2, char* winner, time_t start, time_t end, int strategy);
+void freeRoundHistory(RoundHistory *history);
+
+// Memory cleanup functions
+void freeQueue(Queue *F);
+void freeList(Elist *LG);
+void freeStack(Stack *LP);
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// QUEUE OPERATIONS
 
 void Initqueue(Queue *F) {
     F->head = NULL;
     F->tail = NULL;
-    F->size = 0;
-}
-
-bool EmptyQueue(Queue F) {
-    return (F.head == NULL);
-}
-
-int QueueSize(Queue F) {
-    return F.size;  // O(1) instead of O(n)
 }
 
 void Enqueue(Queue *F, Player p) {
     element *N = (element*)malloc(sizeof(element));
     if (N == NULL) {
-        fprintf(stderr, "Memory allocation failed!\n");
+        fprintf(stderr, "Memory allocation error in Enqueue\n");
         return;
     }
-    
+
     N->info = p;
     N->next = NULL;
     
@@ -77,125 +156,85 @@ void Enqueue(Queue *F, Player p) {
         F->tail->next = N;
         F->tail = N;
     }
-    F->size++;
 }
 
-bool Dequeue(Queue *F, Player *p) {
-    if (EmptyQueue(*F)) return false;
+void Dequeue(Queue *F, Player *p) {
+    if (F->head == NULL) {
+        fprintf(stderr, "Error: Attempt to dequeue from empty queue\n");
+        return;
+    }
     
     *p = F->head->info;
     element *temp = F->head;
     F->head = F->head->next;
     free(temp);
-    F->size--;
     
     if (F->head == NULL) {
         F->tail = NULL;
     }
-    return true;
 }
 
-void ClearQueue(Queue *F) {
-    Player temp;
-    while (!EmptyQueue(*F)) {
-        Dequeue(F, &temp);
-    }
+bool EmptyQueue(Queue F) {
+    return (F.head == NULL);
 }
 
-//==============================================================================
-// STACK OPERATIONS - O(1) for all operations
-//==============================================================================
+//-----------------------------------------------------------------------------------------------------------------------------------
+// STACK OPERATIONS
 
-void InitStack(Stack *S) {
+void InitStack(Stack *S){
     *S = NULL;
 }
 
-bool EmptyStack(Stack S) {
-    return (S == NULL);
-}
-
-void PUSH(Stack *S, Player P) {
+void PUSH(Stack *S, Player P){
     element *N = (element*)malloc(sizeof(element));
     if (N == NULL) {
-        fprintf(stderr, "Memory allocation failed!\n");
+        fprintf(stderr, "Memory allocation error in PUSH\n");
         return;
     }
+    
     N->info = P;
     N->next = *S;
     *S = N;
 }
 
-bool POP(Stack *S, Player *P) {
-    if (EmptyStack(*S)) return false;
+void POP(Stack *S, Player *P){
+    if (*S == NULL) {
+        fprintf(stderr, "Error: Attempt to pop from empty stack\n");
+        return;
+    }
     
     *P = (*S)->info;
     element *temp = *S;
     *S = (*S)->next;
-    free(temp);
-    return true;
+    free(temp); 
 }
 
-Player TOPStack(Stack S) {
+bool EmptyStack(Stack S){
+    return (S == NULL);
+}
+
+Player TOPStack(Stack S){
     return S->info;
 }
 
-int StackSize(Stack S) {
-    int count = 0;
-    element *temp = S;
-    while (temp != NULL) {
-        count++;
-        temp = temp->next;
-    }
-    return count;
-}
-
-void ClearStack(Stack *S) {
-    Player temp;
-    while (!EmptyStack(*S)) {
-        POP(S, &temp);
-    }
-}
-
-//==============================================================================
+//-----------------------------------------------------------------------------------------------------------------------------------
 // LIST OPERATIONS
-//==============================================================================
 
-void InitList(Elist *L) {
-    *L = NULL;
-}
-
-bool EmptyList(Elist L) {
-    return (L == NULL);
-}
-
-int ListSize(Elist L) {
-    int count = 0;
-    element *temp = L;
-    while (temp != NULL) {
-        count++;
-        temp = temp->next;
-    }
-    return count;
-}
-
-// Insert in descending order by totalScore - O(n) worst case
 void insertSortedLG(Elist *LG, Player p) {
     element *N = (element*)malloc(sizeof(element));
     if (N == NULL) {
-        fprintf(stderr, "Memory allocation failed!\n");
+        fprintf(stderr, "Memory allocation error in insertSortedLG\n");
         return;
     }
     
     N->info = p;
     N->next = NULL;
 
-    // Insert at head if list is empty or new player has highest score
     if (*LG == NULL || p.totalScore > (*LG)->info.totalScore) {
         N->next = *LG;
         *LG = N;
     } else {
         element *current = *LG;
-        // Find insertion point
         while (current->next != NULL && current->next->info.totalScore >= p.totalScore) {
             current = current->next;
         }
@@ -204,86 +243,18 @@ void insertSortedLG(Elist *LG, Player p) {
     }
 }
 
-void ClearList(Elist *L) {
-    element *temp;
-    while (*L != NULL) {
-        temp = *L;
-        *L = (*L)->next;
-        free(temp);
-    }
-}
+//-----------------------------------------------------------------------------------------------------------------------------------
+// COMMON FUNCTIONS
 
-//==============================================================================
-// MATHEMATICAL HELPER FUNCTIONS
-//==============================================================================
-
-// Generate random number - O(1)
 int randomNumber() {
-    return rand() % 1000000;  // Limited range for better readability
+    return rand() % 100000; // Bounded random number
 }
-
-// Calculate sum of digits - O(log n) where n is the number
-int sumOfDigits(int value) {
-    int sum = 0;
-    value = abs(value);
-    while (value != 0) {
-        sum += value % 10;
-        value /= 10;
-    }
-    return sum;
-}
-
-// GCD using Euclidean algorithm - O(log min(a,b))
-int GCD(int a, int b) {
-    a = abs(a);
-    b = abs(b);
-    if (b == 0) return a;
-    while (b != 0) {
-        int temp = b;
-        b = a % b;
-        a = temp;
-    }
-    return a;
-}
-
-// Check if digit appears in number - O(log n)
-bool digitInNumber(int digit, int number) {
-    if (number == 0 && digit == 0) return true;
-    number = abs(number);
-    while (number > 0) {
-        if (number % 10 == digit) {
-            return true;
-        }
-        number /= 10;
-    }
-    return false;
-}
-
-// Check if any digit of gcd appears in num1 or num2 - O(log gcd)
-bool gcdDigitInNumbers(int gcd, int num1, int num2) {
-    if (gcd == 0) return digitInNumber(0, num1) || digitInNumber(0, num2);
-    
-    int original_gcd = gcd;
-    while (gcd > 0) {
-        int digit = gcd % 10;
-        if (digitInNumber(digit, num1) || digitInNumber(digit, num2)) {
-            return true;
-        }
-        gcd /= 10;
-    }
-    return false;
-}
-
-//==============================================================================
-// PLAYER INITIALIZATION
-//==============================================================================
 
 void AutoFill(Queue *F, int n) {
-    printf("\n⏳ Generating %d players...\n", n);
     for (int i = 0; i < n; i++) {
         Player p;
         
-        sprintf(p.name, "Player_%02d", i + 1); 
+        sprintf(p.name, "Player_%02d", i+1);
         p.playerID = 1000 + i;
         p.age = 18 + (rand() % 10);
         p.totalScore = 0;
@@ -292,234 +263,56 @@ void AutoFill(Queue *F, int n) {
         p.consecutiveWins = 0;
         p.consecutiveLosses = 0;
         p.currentScore = 0;
+        p.winsPartI = 0;
+        p.lossesPartI = 0;
+        p.winsPartII = 0;
+        p.lossesPartII = 0;
 
         Enqueue(F, p);
     }
-    printf("✓ Successfully registered %d players!\n", n);
 }
 
-//==============================================================================
-// DISPLAY FUNCTIONS
-//==============================================================================
-
-void printSeparator(char c, int length) {
-    for (int i = 0; i < length; i++) putchar(c);
-    putchar('\n');
-}
-
-void displayPlayer(Player p, bool detailed) {
-    if (detailed) {
-        printf("  ┌─ %s (ID: %d) ─┐\n", p.name, p.playerID);
-        printf("  │ Age: %d                    \n", p.age);
-        printf("  │ Wins: %d | Losses: %d      \n", p.roundWon, p.roundLost);
-        printf("  │ Total Score: %d            \n", p.totalScore);
-        printf("  │ Consecutive W/L: %d/%d     \n", p.consecutiveWins, p.consecutiveLosses);
-        printf("  └────────────────────────────┘\n");
-    } else {
-        printf("  • %s (ID: %d, Score: %d, W/L: %d/%d)\n", 
-               p.name, p.playerID, p.totalScore, p.roundWon, p.roundLost);
-    }
-}
-
-void displayQueue(Queue F, const char *queueName) {
-    printf("\n╔══════════════════════════════════════════════════════╗\n");
-    printf("║  %-43s Size: %2d  ║\n", queueName, F.size);
-    printf("╚══════════════════════════════════════════════════════╝\n");
-    
-    if (EmptyQueue(F)) {
-        printf("  [Empty]\n");
-        return;
-    }
-    
-    element *temp = F.head;
-    int count = 1;
-    while (temp != NULL) {
-        printf("[%d] ", count++);
-        displayPlayer(temp->info, false);
-        temp = temp->next;
-    }
-}
-
-void displayList(Elist L, const char *listName) {
-    int size = ListSize(L);
-    printf("\n╔══════════════════════════════════════════════════════╗\n");
-    printf("║  %-43s Size: %2d  ║\n", listName, size);
-    printf("╚══════════════════════════════════════════════════════╝\n");
-    
-    if (L == NULL) {
-        printf("  [Empty]\n");
-        return;
-    }
-    
-    element *temp = L;
-    int count = 1;
-    while (temp != NULL) {
-        printf("[%d] ", count++);
-        displayPlayer(temp->info, false);
-        temp = temp->next;
-    }
-}
-
-void displayGameState(Queue F, Queue F1, Queue F3, Stack LP, Elist LG) {
-    printf("\n");
-    printSeparator('═', 70);
-    printf("                        CURRENT GAME STATE\n");
-    printSeparator('═', 70);
-    
-    displayQueue(F1, "Queue F1 (Priority 1 - Hot Streak)");
-    displayQueue(F, "Queue F (Normal Priority)");
-    displayQueue(F3, "Queue F3 (Priority 3 - Struggling)");
-    displayList(LG, "Winners List (LG) 🏆");
-    displayList(LP, "Losers List (LP) ❌");
-    
-    int totalActive = F.size + F1.size + F3.size;
-    printf("\n📊 Active Players: %d | Winners: %d | Losers: %d\n", 
-           totalActive, ListSize(LG), StackSize(LP));
-    printSeparator('═', 70);
-}
-
-void displayCompactState(Queue F, Queue F1, Queue F3, Stack LP, Elist LG) {
-    printf("\n📊 State: F1:%d | F:%d | F3:%d | LG:%d | LP:%d\n", 
-           F1.size, F.size, F3.size, ListSize(LG), StackSize(LP));
-}
-
-//==============================================================================
-// GAMEPLAY - PART I (Sum of Digits Strategy)
-//==============================================================================
-
-void playRoundPartI(Player *P1, Player *P2, int roundNumber, bool autoPlay) {
-    printf("\n");
-    printSeparator('═', 70);
-    printf("  ROUND %d - PART I: %s vs %s\n", roundNumber, P1->name, P2->name);
-    printSeparator('═', 70);
-    
-    P1->currentScore = 0;
-    P2->currentScore = 0;
-    int turn = 0;
-    
-    while (abs(P1->currentScore - P2->currentScore) < 3 && turn < 12) {
-        Player *current = (turn % 2 == 0) ? P1 : P2;
-        
-        printf("\n─── Turn %d: %s ───\n", turn + 1, current->name);
-        
-        if (!autoPlay) {
-            printf("Press ENTER to generate number...");
-            getchar();
-        }
-
-        int random = randomNumber();
-        int sum = sumOfDigits(random);
-        bool scored = (sum % 5 == 0);
-        
-        printf("  Generated: %d → Sum of digits: %d ", random, sum);
-        
-        if (scored) {
-            printf("✓ (Multiple of 5)\n");
-            current->currentScore++;
-            printf("  %s scores! (+1 point)\n", current->name);
-        } else {
-            printf("✗ (Not multiple of 5)\n");
-            printf("  No point for %s\n", current->name);
-        }
-        
-        printf("  Score: %s %d - %d %s\n", P1->name, P1->currentScore, P2->currentScore, P2->name);
-        
-        turn++;
-        
-        if (abs(P1->currentScore - P2->currentScore) >= 3) {
-            break;
-        }
-    }
-}
-
-//==============================================================================
-// GAMEPLAY - PART II (GCD Strategy)
-//==============================================================================
-
-void playRoundPartII(Player *P1, Player *P2, int roundNumber, bool autoPlay) {
-    printf("\n");
-    printSeparator('═', 70);
-    printf("  ROUND %d - PART II (GCD): %s vs %s\n", roundNumber, P1->name, P2->name);
-    printSeparator('═', 70);
-    
-    P1->currentScore = 0;
-    P2->currentScore = 0;
-    int turn = 0;
-    
-    while (abs(P1->currentScore - P2->currentScore) < 3 && turn < 8) { // 8 turns = 16 numbers
-        Player *current = (turn % 2 == 0) ? P1 : P2;
-        
-        printf("\n─── Turn %d: %s ───\n", turn + 1, current->name);
-        
-        if (!autoPlay) {
-            printf("Press ENTER to generate 2 numbers...");
-            getchar();
-        }
-
-        int num1 = randomNumber();
-        int num2 = randomNumber();
-        int gcd = GCD(num1, num2);
-        bool scored = gcdDigitInNumbers(gcd, num1, num2);
-        
-        printf("  Generated: %d and %d\n", num1, num2);
-        printf("  GCD(%d, %d) = %d ", num1, num2, gcd);
-        
-        if (scored) {
-            printf("✓ (Digit match found)\n");
-            current->currentScore++;
-            printf("  %s scores! (+1 point)\n", current->name);
-        } else {
-            printf("✗ (No digit match)\n");
-            printf("  No point for %s\n", current->name);
-        }
-        
-        printf("  Score: %s %d - %d %s\n", P1->name, P1->currentScore, P2->currentScore, P2->name);
-        
-        turn++;
-        
-        if (abs(P1->currentScore - P2->currentScore) >= 3) {
-            break;
-        }
-    }
-}
-
-//==============================================================================
-// PLAYER STATISTICS UPDATE
-//==============================================================================
-
-void updateStatistics(Player *P1, Player *P2) {
-    printf("\n");
-    printSeparator('─', 70);
-    
+void updatePlayersStatistics(Player *P1, Player *P2, int strategy) {
     if (P1->currentScore > P2->currentScore) {
+        // Player 1 wins
         P1->roundWon++;
         P1->consecutiveWins++;
         P1->consecutiveLosses = 0;
         P1->totalScore += P1->currentScore;
+        if (strategy == 1) P1->winsPartI++;
+        else P1->winsPartII++;
 
         P2->roundLost++;
         P2->consecutiveLosses++;
         P2->consecutiveWins = 0;
         P2->totalScore += P2->currentScore;
+        if (strategy == 1) P2->lossesPartI++;
+        else P2->lossesPartII++;
         
-        printf("  🏆 WINNER: %s\n", P1->name);
-        printf("  Final Score: %d - %d\n", P1->currentScore, P2->currentScore);
+        printf("🏆 WINNER: %s (ID: %d)\n", P1->name, P1->playerID);
+        printf("Score: %d - %d\n", P1->currentScore, P2->currentScore);
         
     } else if (P2->currentScore > P1->currentScore) {
+        // Player 2 wins
         P2->roundWon++;
         P2->consecutiveWins++;
         P2->consecutiveLosses = 0;
         P2->totalScore += P2->currentScore;
+        if (strategy == 1) P2->winsPartI++;
+        else P2->winsPartII++;
 
         P1->roundLost++;
         P1->consecutiveLosses++;
         P1->consecutiveWins = 0;
         P1->totalScore += P1->currentScore;
+        if (strategy == 1) P1->lossesPartI++;
+        else P1->lossesPartII++;
         
-        printf("  🏆 WINNER: %s\n", P2->name);
-        printf("  Final Score: %d - %d\n", P2->currentScore, P1->currentScore);
+        printf("🏆 WINNER: %s (ID: %d)\n", P2->name, P2->playerID);
+        printf("Score: %d - %d\n", P2->currentScore, P1->currentScore);
         
     } else {
+        // Draw
         P1->consecutiveWins = 0;
         P1->consecutiveLosses = 0;
         P2->consecutiveWins = 0;
@@ -528,490 +321,891 @@ void updateStatistics(Player *P1, Player *P2) {
         P1->totalScore += P1->currentScore;
         P2->totalScore += P2->currentScore;
         
-        printf("  🤝 DRAW!\n");
-        printf("  Final Score: %d - %d\n", P1->currentScore, P2->currentScore);
-    }
-    printSeparator('─', 70);
-}
-
-//==============================================================================
-// PLAYER CLASSIFICATION
-//==============================================================================
-
-void classifyPlayerPartI(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG) {
-    // Check elimination (5 losses)
-    if (P->roundLost >= 5) {
-        PUSH(LP, *P);        
-        printf("    ❌ %s → LP (5 losses - ELIMINATED)\n", P->name);
-        return;
-    }
-    
-    // Check victory (5 wins)
-    if (P->roundWon >= 5) {
-        insertSortedLG(LG, *P); 
-        printf("    🏆 %s → LG (5 wins - CHAMPION!)\n", P->name);
-        return;
-    }
-    
-    // Priority queue F1 (3 consecutive wins)
-    if (P->consecutiveWins >= 3) {
-        Enqueue(F1, *P);
-        printf("    ⚡ %s → F1 (3 consecutive wins - HOT STREAK!)\n", P->name);
-        return;
-    }
-    
-    // Low priority queue F3 (3 total losses)
-    if (P->roundLost >= 3) {
-        Enqueue(F3, *P);
-        printf("    ⚠️  %s → F3 (3 losses - STRUGGLING)\n", P->name);
-        return;
-    }
-
-    // Normal queue F
-    Enqueue(F, *P);
-    printf("    ➡️  %s → F (Normal priority)\n", P->name);
-}
-
-void classifyPlayerPartII(Player *P, Queue *F, Queue *F3, Stack *LP, Elist *LG, bool winner) {
-    // Check elimination (2 losses)
-    if (P->roundLost >= 2) {
-        PUSH(LP, *P);        
-        printf("    ❌ %s → LP (2 losses - ELIMINATED)\n", P->name);
-        return;
-    }
-    
-    // Check victory (2 consecutive wins)
-    if (P->consecutiveWins >= 2) {
-        insertSortedLG(LG, *P); 
-        printf("    🏆 %s → LG (2 consecutive wins - WINNER!)\n", P->name);
-        return;
-    }
-    
-    // Winner goes to F, loser goes to F3
-    if (winner) {
-        Enqueue(F, *P);
-        printf("    ➡️  %s → F (Won this round)\n", P->name);
-    } else {
-        Enqueue(F3, *P);
-        printf("    ⚠️  %s → F3 (Lost this round)\n", P->name);
+        printf("🤝 DRAW!\n");
+        printf("Score: %d - %d\n", P1->currentScore, P2->currentScore);
     }
 }
 
-//==============================================================================
-// PLAYER SELECTION
-//==============================================================================
-
-bool GetNextPlayer(Queue *F1, Queue *F, Queue *F3, Player *p, Stack *LP) {
-    // Priority 1: F1
+bool GetPlayer(Queue *F1, Queue *F, Queue *F3, Player *p, Stack *LP) {
     if (!EmptyQueue(*F1)) {
         Dequeue(F1, p);
         return true;
     }
-    
-    // Priority 2: F
     if (!EmptyQueue(*F)) {
         Dequeue(F, p);
         return true;
     }
-    
-    // Priority 3: F3
     if (!EmptyQueue(*F3)) {
-        // Special case: last player in F3
-        if (QueueSize(*F3) == 1) { 
+        if (F3->head == F3->tail) {
             Player last;
             Dequeue(F3, &last);
-            PUSH(LP, last); 
-            printf("\n⚠️  Last player in F3 eliminated: %s\n", last.name);
+            PUSH(LP, last);
             return false;
         }
         Dequeue(F3, p);
         return true;
     }
-    
     return false;
 }
 
-//==============================================================================
-// QUERY FUNCTIONS
-//==============================================================================
-
-void showTop3Winners(Elist LG) {
-    printf("\n");
-    printSeparator('═', 70);
-    printf("                         🏆 TOP 3 WINNERS 🏆\n");
-    printSeparator('═', 70);
-    
-    element *temp = LG;
-    int rank = 1;
-    
-    const char *medals[] = {"🥇", "🥈", "🥉"};
-    
-    while (temp != NULL && rank <= 3) {
-        printf("\n%s RANK %d:\n", medals[rank - 1], rank);
-        displayPlayer(temp->info, true);
-        temp = temp->next;
-        rank++;
-    }
-    
-    if (rank == 1) {
-        printf("\n  No winners yet.\n");
-    }
-    printSeparator('═', 70);
+bool isGameOver(Queue F, Queue F1, Queue F3){
+    return EmptyQueue(F) && EmptyQueue(F1) && EmptyQueue(F3);
 }
 
-void showPlayersByWinsLosses(Elist LG, Stack LP, int wins, int losses, const char *description) {
-    printf("\n╔══════════════════════════════════════════════════════╗\n");
-    printf("║  %-50s  ║\n", description);
-    printf("╚══════════════════════════════════════════════════════╝\n");
+//-----------------------------------------------------------------------------------------------------------------------------------
+// PART I FUNCTIONS
+
+int sumOfDigits(int value){
+    int sum = 0;
+    while(value != 0){
+        sum += value % 10;
+        value /= 10;
+    }
+    return sum;
+}
+
+void playRoundPartOne(Player *P1, Player *P2){
+    int generatedValue = 0;
+    
+    printf("\n═══════════════════════════════════════\n");
+    printf("    PART I ROUND: %s vs %s\n", P1->name, P2->name);
+    printf("═══════════════════════════════════════\n");
+    
+    P1->currentScore = 0;
+    P2->currentScore = 0;
+    
+    while (abs(P1->currentScore - P2->currentScore) < SCORE_DIFFERENCE_THRESHOLD && 
+           generatedValue < MAX_VALUES_PART1) {
+        
+        // Player 1 turn
+        printf("\n─── %s's Turn ───\n", P1->name);
+        printf("Press ENTER to generate value...");
+        getchar();
+
+        int random1 = randomNumber();
+        printf("Generated: %d\n", random1);
+
+        int sum1 = sumOfDigits(random1);
+        printf("Sum of digits: %d\n", sum1);
+
+        if(sum1 % 5 == 0){
+            printf("✓ %s scores! (+1)\n", P1->name);
+            P1->currentScore++;
+        } else {
+            printf("✗ %s scores nothing\n", P1->name);
+        }
+
+        printf("Current: %s=%d, %s=%d\n", P1->name, P1->currentScore, P2->name, P2->currentScore);
+        generatedValue++;
+        
+        if (abs(P1->currentScore - P2->currentScore) >= SCORE_DIFFERENCE_THRESHOLD) {
+            break;
+        }
+
+        // Player 2 turn
+        printf("\n─── %s's Turn ───\n", P2->name);
+        printf("Press ENTER to generate value...");
+        getchar();
+
+        int random2 = randomNumber();
+        printf("Generated: %d\n", random2);
+
+        int sum2 = sumOfDigits(random2);
+        printf("Sum of digits: %d\n", sum2);
+
+        if(sum2 % 5 == 0){
+            printf("✓ %s scores! (+1)\n", P2->name);
+            P2->currentScore++;
+        } else {
+            printf("✗ %s scores nothing\n", P2->name);
+        }
+
+        printf("Current: %s=%d, %s=%d\n", P1->name, P1->currentScore, P2->name, P2->currentScore);
+        generatedValue++;
+    }
+    
+    printf("\n═══════════════════════════════════════\n");
+    printf("         ROUND FINISHED\n");
+    printf("═══════════════════════════════════════\n");
+}
+
+void classifyPartOne(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG){
+    if (P->roundLost >= LOSS_THRESHOLD_PART1) {
+        PUSH(LP, *P);
+        printf("→ %s ELIMINATED (5 losses)\n", P->name);
+    }
+    else if (P->roundWon >= WIN_THRESHOLD_PART1) {
+        insertSortedLG(LG, *P);
+        printf("→ %s WINS THE GAME! (5 wins)\n", P->name);
+    }
+    else if (P->consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1) {
+        Enqueue(F1, *P);
+        printf("→ %s moved to Priority Queue F1 (3 consecutive wins)\n", P->name);
+    }
+    else if (P->roundLost >= CONSECUTIVE_LOSS_THRESHOLD_PART1) {
+        Enqueue(F3, *P);
+        printf("→ %s moved to Queue F3 (3 losses)\n", P->name);
+    }
+    else {
+        Enqueue(F, *P);
+        printf("→ %s returns to Queue F\n", P->name);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// PART II FUNCTIONS
+
+int gcd(int a, int b) {
+    if (a == 0) return b;
+    if (b == 0) return a;
+    
+    while (b != 0) {
+        int r = a % b;
+        a = b;
+        b = r;
+    }
+    return a;
+}
+
+bool digitAppears(int digit, int number) {
+    if (number == 0 && digit == 0) return true;
+
+    while (number > 0) {
+        if (number % 10 == digit)
+            return true;
+        number /= 10;
+    }
+    return false;
+}
+
+bool gcdDigitCondition(int a, int b) {
+    int g = gcd(a, b);
+
+    while (g > 0) {
+        int d = g % 10;
+        if (digitAppears(d, a) || digitAppears(d, b))
+            return true;
+        g /= 10;
+    }
+    return false;
+}
+
+void playRoundPartTwo(Player *P1, Player *P2) {
+    int generatedValue = 0;
+
+    printf("\n═══════════════════════════════════════\n");
+    printf("    PART II ROUND: %s vs %s\n", P1->name, P2->name);
+    printf("═══════════════════════════════════════\n");
+
+    P1->currentScore = 0;
+    P2->currentScore = 0;
+
+    while (abs(P1->currentScore - P2->currentScore) < SCORE_DIFFERENCE_THRESHOLD && 
+           generatedValue < MAX_VALUES_PART2) {
+
+        // Player 1 turn
+        printf("\n─── %s's Turn ───\n", P1->name);
+        printf("Press ENTER to generate values...");
+        getchar();
+
+        int a1 = randomNumber();
+        int b1 = randomNumber();
+        printf("Generated: %d and %d\n", a1, b1);
+
+        int g1 = gcd(a1, b1);
+        printf("GCD(%d, %d) = %d\n", a1, b1, g1);
+
+        if (gcdDigitCondition(a1, b1)) {
+            printf("✓ %s scores! (+1)\n", P1->name);
+            P1->currentScore++;
+        } else {
+            printf("✗ %s scores nothing\n", P1->name);
+        }
+
+        printf("Current: %s=%d, %s=%d\n", P1->name, P1->currentScore, P2->name, P2->currentScore);
+        generatedValue += 2;
+
+        if (abs(P1->currentScore - P2->currentScore) >= SCORE_DIFFERENCE_THRESHOLD)
+            break;
+
+        // Player 2 turn
+        printf("\n─── %s's Turn ───\n", P2->name);
+        printf("Press ENTER to generate values...");
+        getchar();
+
+        int a2 = randomNumber();
+        int b2 = randomNumber();
+        printf("Generated: %d and %d\n", a2, b2);
+
+        int g2 = gcd(a2, b2);
+        printf("GCD(%d, %d) = %d\n", a2, b2, g2);
+
+        if (gcdDigitCondition(a2, b2)) {
+            printf("✓ %s scores! (+1)\n", P2->name);
+            P2->currentScore++;
+        } else {
+            printf("✗ %s scores nothing\n", P2->name);
+        }
+
+        printf("Current: %s=%d, %s=%d\n", P1->name, P1->currentScore, P2->name, P2->currentScore);
+        generatedValue += 2;
+    }
+
+    printf("\n═══════════════════════════════════════\n");
+    printf("         ROUND FINISHED\n");
+    printf("═══════════════════════════════════════\n");
+}
+
+void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG){
+    if (P->roundLost >= LOSS_THRESHOLD_PART2) {
+        PUSH(LP, *P);
+        printf("→ %s ELIMINATED (2 losses in Part II)\n", P->name);
+    }
+    else if (P->consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART2) {
+        insertSortedLG(LG, *P);
+        printf("→ %s WINS THE GAME! (2 consecutive wins in Part II)\n", P->name);
+    }
+    else if (P->consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1) {
+        Enqueue(F1, *P);
+        printf("→ %s moved to Priority Queue F1 (3 consecutive wins)\n", P->name);
+    }
+    else {
+        Enqueue(F3, *P);
+        printf("→ %s moved to Queue F3\n", P->name);
+    }
+}
+
+bool forcedGameOver(int strategy2Rounds, int n){
+    return (strategy2Rounds >= 2 * n);
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// DISPLAY FUNCTIONS
+
+void displayQueue(Queue F, char* name) {
+    printf("\n┌─── Queue %s ───\n", name);
+    if (EmptyQueue(F)) {
+        printf("│ (empty)\n");
+        printf("└────────────────\n");
+        return;
+    }
+    
+    element *current = F.head;
+    int count = 0;
+    while (current != NULL) {
+        printf("│ %d. %s (ID:%d) W:%d L:%d Score:%d\n",
+               ++count, current->info.name, current->info.playerID,
+               current->info.roundWon, current->info.roundLost,
+               current->info.totalScore);
+        current = current->next;
+    }
+    printf("└────────────────\n");
+}
+
+void displayList(Elist LG) {
+    printf("\n┌─── Winners List (LG) ───\n");
+    if (LG == NULL) {
+        printf("│ (empty)\n");
+        printf("└─────────────────────────\n");
+        return;
+    }
+    
+    element *current = LG;
+    int rank = 1;
+    while (current != NULL) {
+        printf("│ #%d: %s (ID:%d) - Total Score: %d (W:%d L:%d)\n",
+               rank++, current->info.name, current->info.playerID,
+               current->info.totalScore, current->info.roundWon, 
+               current->info.roundLost);
+        current = current->next;
+    }
+    printf("└─────────────────────────\n");
+}
+
+void displayStack(Stack LP) {
+    printf("\n┌─── Losers List (LP) ───\n");
+    if (EmptyStack(LP)) {
+        printf("│ (empty)\n");
+        printf("└────────────────────────\n");
+        return;
+    }
+    
+    element *current = LP;
+    int count = 1;
+    while (current != NULL) {
+        printf("│ %d. %s (ID:%d) W:%d L:%d Score:%d\n",
+               count++, current->info.name, current->info.playerID,
+               current->info.roundWon, current->info.roundLost,
+               current->info.totalScore);
+        current = current->next;
+    }
+    printf("└────────────────────────\n");
+}
+
+void displayAllQueuesAndLists(Queue F, Queue F1, Queue F3, Elist LG, Stack LP) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║      CURRENT GAME STATE               ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    displayQueue(F1, "F1 (Priority)");
+    displayQueue(F, "F (Normal)");
+    displayQueue(F3, "F3 (Low Priority)");
+    displayList(LG);
+    displayStack(LP);
+}
+
+void displayTop3Winners(Elist LG) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║          TOP 3 WINNERS                ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    if (LG == NULL) {
+        printf("No winners yet!\n");
+        return;
+    }
+    
+    element *current = LG;
+    int rank = 1;
+    
+    while (current != NULL && rank <= 3) {
+        if (rank == 1) printf("🥇 ");
+        else if (rank == 2) printf("🥈 ");
+        else if (rank == 3) printf("🥉 ");
+        
+        printf("Rank %d: %s (ID:%d)\n", rank, current->info.name, current->info.playerID);
+        printf("   Total Score: %d | Wins: %d | Losses: %d\n", 
+               current->info.totalScore, current->info.roundWon, current->info.roundLost);
+        printf("   Part I: %dW/%dL | Part II: %dW/%dL\n\n",
+               current->info.winsPartI, current->info.lossesPartI,
+               current->info.winsPartII, current->info.lossesPartII);
+        
+        current = current->next;
+        rank++;
+    }
+}
+
+void displayRoundHistory(RoundHistory history) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║        ROUND HISTORY                  ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    if (history == NULL) {
+        printf("No rounds played yet!\n");
+        return;
+    }
+    
+    Round *current = history;
+    while (current != NULL) {
+        printf("\nRound %d (Strategy: Part %s)\n", 
+               current->roundNumber, current->strategy == 1 ? "I" : "II");
+        printf("Players: %s (ID:%d) vs %s (ID:%d)\n",
+               current->player1Name, current->player1ID,
+               current->player2Name, current->player2ID);
+        printf("Score: %d - %d\n", current->player1Score, current->player2Score);
+        printf("Winner: %s\n", current->winner);
+        printf("Duration: %.0f seconds\n", difftime(current->endTime, current->startTime));
+        printf("─────────────────────────────────────\n");
+        
+        current = current->next;
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// QUERY FUNCTIONS
+
+void showPlayersWithNoWins(Elist LG, Stack LP) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║    PLAYERS WITH NO WINS               ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    bool found = false;
+    
+    // Check losers list
+    element *current = LP;
+    while (current != NULL) {
+        if (current->info.roundWon == 0) {
+            printf("- %s (ID:%d) | Losses: %d\n", 
+                   current->info.name, current->info.playerID, 
+                   current->info.roundLost);
+            found = true;
+        }
+        current = current->next;
+    }
+    
+    if (!found) {
+        printf("All players have won at least one round!\n");
+    }
+}
+
+void showPlayersByWinsPartI(Elist LG, Stack LP, int wins) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║  PLAYERS WITH %d WIN(S) IN PART I      ║\n", wins);
+    printf("╚═══════════════════════════════════════╝\n");
     
     bool found = false;
     
     // Check winners list
-    element *temp = LG;
-    while (temp != NULL) {
-        if ((wins == -1 || temp->info.roundWon == wins) && 
-            (losses == -1 || temp->info.roundLost == losses)) {
-            displayPlayer(temp->info, false);
+    element *current = LG;
+    while (current != NULL) {
+        if (current->info.winsPartI == wins) {
+            printf("- %s (ID:%d) | Part I: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartI, current->info.lossesPartI,
+                   current->info.totalScore);
             found = true;
         }
-        temp = temp->next;
+        current = current->next;
     }
     
     // Check losers list
-    temp = LP;
-    while (temp != NULL) {
-        if ((wins == -1 || temp->info.roundWon == wins) && 
-            (losses == -1 || temp->info.roundLost == losses)) {
-            displayPlayer(temp->info, false);
+    current = LP;
+    while (current != NULL) {
+        if (current->info.winsPartI == wins) {
+            printf("- %s (ID:%d) | Part I: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartI, current->info.lossesPartI,
+                   current->info.totalScore);
             found = true;
         }
-        temp = temp->next;
+        current = current->next;
     }
     
     if (!found) {
-        printf("  [No players found]\n");
+        printf("No players with exactly %d win(s) in Part I.\n", wins);
     }
 }
 
-void displayStatistics(Elist LG, Stack LP, GameStats stats) {
+void showPlayersByLossesPartI(Elist LG, Stack LP, int losses) {
     printf("\n");
-    printSeparator('═', 70);
-    printf("                      📊 GAME STATISTICS 📊\n");
-    printSeparator('═', 70);
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║ PLAYERS WITH %d LOSS(ES) IN PART I    ║\n", losses);
+    printf("╚═══════════════════════════════════════╝\n");
     
-    printf("\n⏱️  TIMING:\n");
-    printf("  Start: %s", ctime(&stats.startTime));
-    printf("  End:   %s", ctime(&stats.endTime));
-    printf("  Duration: %.0f seconds (%.1f minutes)\n", 
-           difftime(stats.endTime, stats.startTime),
-           difftime(stats.endTime, stats.startTime) / 60.0);
+    bool found = false;
     
-    printf("\n🎮 ROUNDS:\n");
-    printf("  Total Rounds: %d\n", stats.totalRounds);
-    printf("  Part I Rounds: %d\n", stats.partIRounds);
-    printf("  Part II Rounds: %d\n", stats.partIIRounds);
+    // Check winners list
+    element *current = LG;
+    while (current != NULL) {
+        if (current->info.lossesPartI == losses) {
+            printf("- %s (ID:%d) | Part I: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartI, current->info.lossesPartI,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
     
-    printf("\n👥 FINAL COUNTS:\n");
-    printf("  Winners (LG): %d\n", ListSize(LG));
-    printf("  Losers (LP): %d\n", StackSize(LP));
+    // Check losers list
+    current = LP;
+    while (current != NULL) {
+        if (current->info.lossesPartI == losses) {
+            printf("- %s (ID:%d) | Part I: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartI, current->info.lossesPartI,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
     
-    printSeparator('═', 70);
-    
-    // Detailed queries
-    showPlayersByWinsLosses(LG, LP, 0, -1, "Players with 0 wins");
-    
-    printf("\n");
-    printSeparator('─', 70);
-    printf("  PART I STRATEGY (Sum of Digits)\n");
-    printSeparator('─', 70);
-    showPlayersByWinsLosses(LG, LP, 1, -1, "Players with 1 win");
-    showPlayersByWinsLosses(LG, LP, 2, -1, "Players with 2 wins");
-    showPlayersByWinsLosses(LG, LP, 3, -1, "Players with 3 wins");
-    showPlayersByWinsLosses(LG, LP, -1, 1, "Players with 1 loss");
-    showPlayersByWinsLosses(LG, LP, -1, 2, "Players with 2 losses");
-    showPlayersByWinsLosses(LG, LP, -1, 3, "Players with 3 losses");
+    if (!found) {
+        printf("No players with exactly %d loss(es) in Part I.\n", losses);
+    }
 }
 
-//==============================================================================
-// MAIN GAME LOOP
-//==============================================================================
+void showPlayersByWinsPartII(Elist LG, Stack LP, int wins) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║ PLAYERS WITH %d WIN(S) IN PART II     ║\n", wins);
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    bool found = false;
+    
+    // Check winners list
+    element *current = LG;
+    while (current != NULL) {
+        if (current->info.winsPartII == wins) {
+            printf("- %s (ID:%d) | Part II: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartII, current->info.lossesPartII,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
+    
+    // Check losers list
+    current = LP;
+    while (current != NULL) {
+        if (current->info.winsPartII == wins) {
+            printf("- %s (ID:%d) | Part II: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartII, current->info.lossesPartII,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
+    
+    if (!found) {
+        printf("No players with exactly %d win(s) in Part II.\n", wins);
+    }
+}
+
+void showPlayersByLossesPartII(Elist LG, Stack LP, int losses) {
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║ PLAYERS WITH %d LOSS(ES) IN PART II   ║\n", losses);
+    printf("╚═══════════════════════════════════════╝\n");
+    
+    bool found = false;
+    
+    // Check winners list
+    element *current = LG;
+    while (current != NULL) {
+        if (current->info.lossesPartII == losses) {
+            printf("- %s (ID:%d) | Part II: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartII, current->info.lossesPartII,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
+    
+    // Check losers list
+    current = LP;
+    while (current != NULL) {
+        if (current->info.lossesPartII == losses) {
+            printf("- %s (ID:%d) | Part II: %dW/%dL | Total Score: %d\n", 
+                   current->info.name, current->info.playerID,
+                   current->info.winsPartII, current->info.lossesPartII,
+                   current->info.totalScore);
+            found = true;
+        }
+        current = current->next;
+    }
+    
+    if (!found) {
+        printf("No players with exactly %d loss(es) in Part II.\n", losses);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// ROUND HISTORY FUNCTIONS
+
+void addRound(RoundHistory *history, int roundNum, Player p1, Player p2, 
+              char* winner, time_t start, time_t end, int strategy) {
+    Round *newRound = (Round*)malloc(sizeof(Round));
+    if (newRound == NULL) {
+        fprintf(stderr, "Memory allocation error in addRound\n");
+        return;
+    }
+    
+    newRound->roundNumber = roundNum;
+    strcpy(newRound->player1Name, p1.name);
+    strcpy(newRound->player2Name, p2.name);
+    newRound->player1ID = p1.playerID;
+    newRound->player2ID = p2.playerID;
+    newRound->player1Score = p1.currentScore;
+    newRound->player2Score = p2.currentScore;
+    strcpy(newRound->winner, winner);
+    newRound->startTime = start;
+    newRound->endTime = end;
+    newRound->strategy = strategy;
+    newRound->next = NULL;
+    
+    if (*history == NULL) {
+        *history = newRound;
+    } else {
+        Round *current = *history;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = newRound;
+    }
+}
+
+void freeRoundHistory(RoundHistory *history) {
+    Round *current = *history;
+    while (current != NULL) {
+        Round *temp = current;
+        current = current->next;
+        free(temp);
+    }
+    *history = NULL;
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// MEMORY CLEANUP FUNCTIONS
+
+void freeQueue(Queue *F) {
+    while (!EmptyQueue(*F)) {
+        Player temp;
+        Dequeue(F, &temp);
+    }
+}
+
+void freeList(Elist *LG) {
+    while (*LG != NULL) {
+        element *temp = *LG;
+        *LG = (*LG)->next;
+        free(temp);
+    }
+}
+
+void freeStack(Stack *LP) {
+    while (!EmptyStack(*LP)) {
+        Player temp;
+        POP(LP, &temp);
+    }
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------
+// MAIN FUNCTION
 
 int main() {
     srand(time(NULL));
-    
-    // Initialize data structures
+
+    int n;
+    int roundsPlayed = 0;
+    int strategy2Rounds = 0;
+    int strategy = 1;
+
     Queue F, F1, F3;
-    Stack LP;
-    Elist LG;
-    GameStats stats = {0, 0, 0};
-    
+    Elist LG = NULL;
+    Stack LP = NULL;
+    RoundHistory history = NULL;
+
     Initqueue(&F);
     Initqueue(&F1);
     Initqueue(&F3);
     InitStack(&LP);
-    InitList(&LG);
-    
-    // Welcome screen
+
+    // Game start time
+    time_t gameStart = time(NULL);
     printf("\n");
-    printSeparator('═', 70);
-    printf("              🎮 RANDOM NUMBER TOURNAMENT GAME 🎮\n");
-    printSeparator('═', 70);
-    
-    int n;
-    printf("\nEnter number of players (recommended 5-20): ");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║     TOURNAMENT GAME SYSTEM            ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    printf("Game started at: %s", ctime(&gameStart));
+
+    printf("\nEnter number of players: ");
     scanf("%d", &n);
     getchar();
-    
-    if (n < 2) {
-        printf("❌ Need at least 2 players!\n");
+
+    if (n <= 0) {
+        printf("Invalid number of players!\n");
         return 1;
     }
-    
-    char autoPlayChoice;
-    bool autoPlay = false;
-    printf("\nAuto-play mode (no pauses)? (y/n): ");
-    scanf("%c", &autoPlayChoice);
-    getchar();
-    autoPlay = (autoPlayChoice == 'y' || autoPlayChoice == 'Y');
-    
-    stats.startTime = time(NULL);
-    printf("\n⏰ Game started at: %s", ctime(&stats.startTime));
-    
+
     AutoFill(&F, n);
-    
-    int maxRoundsPartI = 3 * n;
-    
-    //==========================================================================
-    // PART I: Sum of Digits Strategy
-    //==========================================================================
-    
-    printf("\n");
-    printSeparator('═', 70);
-    printf("              🎯 PART I: SUM OF DIGITS STRATEGY 🎯\n");
-    printSeparator('═', 70);
-    printf("\nRules:\n");
-    printf("  • If sum of digits is multiple of 5 → Score +1\n");
-    printf("  • First to lead by 3 points wins\n");
-    printf("  • Max 12 numbers per round\n");
-    printf("  • 5 wins → Victory | 5 losses → Elimination\n");
-    printf("  • 3 consecutive wins → Priority Queue F1\n");
-    printf("  • 3 losses → Low Priority Queue F3\n");
-    printSeparator('═', 70);
-    
-    if (!autoPlay) {
-        printf("\nPress ENTER to begin Part I...");
+    printf("\n%d players registered successfully!\n", n);
+    printf("Press ENTER to start the tournament...");
+    getchar();
+
+    Player currentPlayer, challenger;
+    bool hasCurrentPlayer = false;
+
+    // MAIN GAME LOOP
+    while (!isGameOver(F, F1, F3)) {
+
+        // Strategy switch
+        if (strategy == 1 && roundsPlayed >= 3 * n) {
+            strategy = 2;
+            printf("\n");
+            printf("╔═══════════════════════════════════════╗\n");
+            printf("║   STRATEGY CHANGED TO PART II         ║\n");
+            printf("║   (After %d rounds = 3n)              ║\n", roundsPlayed);
+            printf("╚═══════════════════════════════════════╝\n");
+            printf("Press ENTER to continue...");
+            getchar();
+        }
+
+        // Forced game over check for Part II
+        if (strategy == 2 && forcedGameOver(strategy2Rounds, n)) {
+            printf("\n");
+            printf("╔═══════════════════════════════════════╗\n");
+            printf("║   FORCED GAME OVER (Part II)          ║\n");
+            printf("║   (After %d rounds = 2n in Part II)   ║\n", strategy2Rounds);
+            printf("╚═══════════════════════════════════════╝\n");
+
+            // Move remaining players
+            Player temp;
+            while (!EmptyQueue(F1)) {
+                Dequeue(&F1, &temp);
+                insertSortedLG(&LG, temp);
+            }
+            while (!EmptyQueue(F)) {
+                Dequeue(&F, &temp);
+                PUSH(&LP, temp);
+            }
+            while (!EmptyQueue(F3)) {
+                Dequeue(&F3, &temp);
+                PUSH(&LP, temp);
+            }
+            break;
+        }
+
+        // Select current player
+        if (!hasCurrentPlayer) {
+            if (!GetPlayer(&F1, &F, &F3, &currentPlayer, &LP))
+                break;
+            hasCurrentPlayer = true;
+        }
+
+        // Select challenger
+        if (!GetPlayer(&F1, &F, &F3, &challenger, &LP))
+            break;
+
+        // Record round start time
+        time_t roundStart = time(NULL);
+
+        // Play round
+        printf("\n");
+        printf("╔═══════════════════════════════════════╗\n");
+        printf("║       ROUND %d                         ║\n", roundsPlayed + 1);
+        printf("╚═══════════════════════════════════════╝\n");
+        
+        if (strategy == 1) {
+            playRoundPartOne(&currentPlayer, &challenger);
+        } else {
+            playRoundPartTwo(&currentPlayer, &challenger);
+            strategy2Rounds++;
+        }
+
+        // Record round end time
+        time_t roundEnd = time(NULL);
+
+        // Update statistics
+        updatePlayersStatistics(&currentPlayer, &challenger, strategy);
+        roundsPlayed++;
+
+        // Determine winner for round history
+        char winner[50];
+        if (currentPlayer.currentScore > challenger.currentScore) {
+            strcpy(winner, currentPlayer.name);
+        } else if (challenger.currentScore > currentPlayer.currentScore) {
+            strcpy(winner, challenger.name);
+        } else {
+            strcpy(winner, "DRAW");
+        }
+
+        // Add to round history
+        addRound(&history, roundsPlayed, currentPlayer, challenger, 
+                 winner, roundStart, roundEnd, strategy);
+
+        // Decide outcome and classify players
+        if (currentPlayer.currentScore > challenger.currentScore) {
+            // Challenger loses
+            if (strategy == 1)
+                classifyPartOne(&challenger, &F, &F1, &F3, &LP, &LG);
+            else
+                classifyPartTwo(&challenger, &F, &F1, &F3, &LP, &LG);
+            // Current player continues
+        }
+        else if (challenger.currentScore > currentPlayer.currentScore) {
+            // Current player loses
+            if (strategy == 1)
+                classifyPartOne(&currentPlayer, &F, &F1, &F3, &LP, &LG);
+            else
+                classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG);
+            // Challenger becomes current player
+            currentPlayer = challenger;
+        }
+        else {
+            // Draw - both return to queue F
+            Enqueue(&F, currentPlayer);
+            Enqueue(&F, challenger);
+            hasCurrentPlayer = false;
+        }
+
+        // Display current game state after each round
+        displayAllQueuesAndLists(F, F1, F3, LG, LP);
+        
+        printf("\nPress ENTER for next round...");
         getchar();
     }
+
+    // Classify remaining current player if exists
+    if (hasCurrentPlayer) {
+        if (strategy == 1)
+            classifyPartOne(&currentPlayer, &F, &F1, &F3, &LP, &LG);
+        else
+            classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG);
+    }
+
+    // Game end time
+    time_t gameEnd = time(NULL);
+
+    // END OF GAME - DISPLAY RESULTS
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║          GAME OVER                    ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    printf("Game ended at: %s", ctime(&gameEnd));
+    printf("Total duration: %.0f seconds\n", difftime(gameEnd, gameStart));
+    printf("Total rounds played: %d\n", roundsPlayed);
+    printf("Part I rounds: %d\n", roundsPlayed - strategy2Rounds);
+    printf("Part II rounds: %d\n", strategy2Rounds);
+
+    // Display final state
+    displayAllQueuesAndLists(F, F1, F3, LG, LP);
+
+    // Display top 3 winners
+    displayTop3Winners(LG);
+
+    // QUERIES SECTION
+    printf("\n");
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║       STATISTICS & QUERIES            ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+
+    showPlayersWithNoWins(LG, LP);
     
-    while (stats.totalRounds < maxRoundsPartI) {
-        // Check if game can continue
-        if (EmptyQueue(F) && EmptyQueue(F1) && EmptyQueue(F3)) {
-            printf("\n✓ All players classified in Part I!\n");
-            break;
-        }
-        
-        Player P1, P2;
-        
-        // Get two players
-        if (!GetNextPlayer(&F1, &F, &F3, &P1, &LP)) {
-            printf("\n⚠️  No players available for next round.\n");
-            break;
-        }
-        
-        if (!GetNextPlayer(&F1, &F, &F3, &P2, &LP)) {
-            printf("\n⚠️  Only one player left. Auto-classifying...\n");
-            classifyPlayerPartI(&P1, &F, &F1, &F3, &LP, &LG);
-            break;
-        }
-        
-        // Play round
-        stats.totalRounds++;
-        stats.partIRounds++;
-        playRoundPartI(&P1, &P2, stats.totalRounds, autoPlay);
-        updateStatistics(&P1, &P2);
-        
-        // Classify players
-        printf("\n  Classifying players:\n");
-        
-        if (P1.currentScore > P2.currentScore) {
-            classifyPlayerPartI(&P1, &F, &F1, &F3, &LP, &LG);
-            classifyPlayerPartI(&P2, &F, &F1, &F3, &LP, &LG);
-        } else if (P2.currentScore > P1.currentScore) {
-            classifyPlayerPartI(&P2, &F, &F1, &F3, &LP, &LG);
-            classifyPlayerPartI(&P1, &F, &F1, &F3, &LP, &LG);
-        } else {
-            // Draw: both go back to F
-            Enqueue(&F, P1);
-            Enqueue(&F, P2);
-            printf("    🤝 Both players (draw) → F\n");
-        }
-        
-        // Display state
-        if (autoPlay) {
-            displayCompactState(F, F1, F3, LP, LG);
-        } else {
-            displayGameState(F, F1, F3, LP, LG);
-            printf("\nPress ENTER for next round...");
-            getchar();
-        }
+    printf("\n--- PART I STATISTICS ---\n");
+    for (int i = 1; i <= 3; i++) {
+        showPlayersByWinsPartI(LG, LP, i);
+        showPlayersByLossesPartI(LG, LP, i);
     }
     
-    //==========================================================================
-    // PART II: GCD Strategy (if needed)
-    //==========================================================================
-    
-    if (!EmptyQueue(F) || !EmptyQueue(F1) || !EmptyQueue(F3)) {
-        printf("\n");
-        printSeparator('═', 70);
-        printf("            ⚡ STRATEGY CHANGE: GCD STRATEGY ⚡\n");
-        printSeparator('═', 70);
-        printf("\nAfter %d rounds, %d players remain. Switching to Part II!\n", 
-               stats.partIRounds, F.size + F1.size + F3.size);
-        
-        printf("\nNew Rules:\n");
-        printf("  • Generate 2 numbers, calculate GCD\n");
-        printf("  • If GCD digit appears in either number → Score +1\n");
-        printf("  • First to lead by 3 points wins\n");
-        printf("  • Max 16 numbers (8 turns) per round\n");
-        printf("  • 2 consecutive wins → Victory | 2 losses → Elimination\n");
-        printSeparator('═', 70);
-        
-        if (!autoPlay) {
-            printf("\nPress ENTER to begin Part II...");
-            getchar();
-        }
-        
-        // Merge F1 into F for Part II and reset consecutive stats
-        while (!EmptyQueue(F1)) {
-            Player p;
-            Dequeue(&F1, &p);
-            p.consecutiveWins = 0;
-            p.consecutiveLosses = 0;
-            Enqueue(&F, p);
-        }
-        
-        // Reset consecutive stats for F
-        element *temp = F.head;
-        while (temp != NULL) {
-            temp->info.consecutiveWins = 0;
-            temp->info.consecutiveLosses = 0;
-            temp = temp->next;
-        }
-        
-        // Reset for F3
-        temp = F3.head;
-        while (temp != NULL) {
-            temp->info.consecutiveWins = 0;
-            temp->info.consecutiveLosses = 0;
-            temp = temp->next;
-        }
-        
-        int maxRoundsPartII = 2 * n;
-        int partIIRoundLimit = 0;
-        
-        while (partIIRoundLimit < maxRoundsPartII) {
-            // Check if game can continue
-            if (EmptyQueue(F) && EmptyQueue(F3)) {
-                printf("\n✓ All players classified in Part II!\n");
-                break;
-            }
-            
-            Player P1, P2;
-            
-            // Get two players
-            if (!GetNextPlayer(&F1, &F, &F3, &P1, &LP)) {
-                printf("\n⚠️  No players available for next round.\n");
-                break;
-            }
-            
-            if (!GetNextPlayer(&F1, &F, &F3, &P2, &LP)) {
-                printf("\n⚠️  Only one player left. Auto-classifying...\n");
-                classifyPlayerPartII(&P1, &F, &F3, &LP, &LG, true);
-                break;
-            }
-            
-            // Play round
-            stats.totalRounds++;
-            stats.partIIRounds++;
-            partIIRoundLimit++;
-            playRoundPartII(&P1, &P2, stats.totalRounds, autoPlay);
-            updateStatistics(&P1, &P2);
-            
-            // Classify players
-            printf("\n  Classifying players:\n");
-            
-            if (P1.currentScore > P2.currentScore) {
-                classifyPlayerPartII(&P1, &F, &F3, &LP, &LG, true);
-                classifyPlayerPartII(&P2, &F, &F3, &LP, &LG, false);
-            } else if (P2.currentScore > P1.currentScore) {
-                classifyPlayerPartII(&P2, &F, &F3, &LP, &LG, true);
-                classifyPlayerPartII(&P1, &F, &F3, &LP, &LG, false);
-            } else {
-                // Draw: both go back to F
-                Enqueue(&F, P1);
-                Enqueue(&F, P2);
-                printf("    🤝 Both players (draw) → F\n");
-            }
-            
-            // Display state
-            if (autoPlay) {
-                displayCompactState(F, F1, F3, LP, LG);
-            } else {
-                displayGameState(F, F1, F3, LP, LG);
-                printf("\nPress ENTER for next round...");
-                getchar();
-            }
-        }
-        
-        // Final cleanup if time limit reached
-        if (!EmptyQueue(F) || !EmptyQueue(F3)) {
-            printf("\n⏰ Part II time limit reached! Final classification...\n");
-            
-            // Remaining F players go to LP
-            while (!EmptyQueue(F)) {
-                Player p;
-                Dequeue(&F, &p);
-                PUSH(&LP, p);
-                printf("  ❌ %s → LP (timeout)\n", p.name);
-            }
-            
-            // Remaining F3 players go to LP
-            while (!EmptyQueue(F3)) {
-                Player p;
-                Dequeue(&F3, &p);
-                PUSH(&LP, p);
-                printf("  ❌ %s → LP (timeout)\n", p.name);
-            }
-        }
+    printf("\n--- PART II STATISTICS ---\n");
+    for (int i = 1; i <= 2; i++) {
+        showPlayersByWinsPartII(LG, LP, i);
+        showPlayersByLossesPartII(LG, LP, i);
     }
-    
-    //==========================================================================
-    // FINAL RESULTS
-    //==========================================================================
-    
-    stats.endTime = time(NULL);
-    
+
+    // Display round history (optional - can be commented out if too long)
+    // displayRoundHistory(history);
+
+    // Fairness analysis
     printf("\n");
-    printSeparator('═', 70);
-    printf("                    🏁 GAME COMPLETE! 🏁\n");
-    printSeparator('═', 70);
-    
-    displayGameState(F, F1, F3, LP, LG);
-    showTop3Winners(LG);
-    displayStatistics(LG, LP, stats);
-    
-    // Cleanup memory
-    ClearQueue(&F);
-    ClearQueue(&F1);
-    ClearQueue(&F3);
-    ClearList(&LG);
-    ClearStack(&LP);
-    
-    printf("\n");
-    printSeparator('═', 70);
-    printf("              ✨ THANK YOU FOR PLAYING! ✨\n");
-    printSeparator('═', 70);
-    printf("\n");
-    
+    printf("╔═══════════════════════════════════════╗\n");
+    printf("║       FAIRNESS ANALYSIS               ║\n");
+    printf("╚═══════════════════════════════════════╝\n");
+    printf("The game demonstrates fairness through:\n");
+    printf("1. Random value generation for all players\n");
+    printf("2. Priority queue system rewarding consecutive wins\n");
+    printf("3. Clear elimination rules (5 losses in Part I, 2 in Part II)\n");
+    printf("4. Immediate winner advancement in Part II\n");
+    printf("5. Equal opportunity through queue rotation\n");
+
+    // Memory cleanup
+    freeQueue(&F);
+    freeQueue(&F1);
+    freeQueue(&F3);
+    freeList(&LG);
+    freeStack(&LP);
+    freeRoundHistory(&history);
+
+    printf("\nThank you for playing!\n");
+
     return 0;
 }
+//correct for a moment 
