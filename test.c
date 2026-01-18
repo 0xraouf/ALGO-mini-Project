@@ -104,7 +104,7 @@ int gcd(int a, int b);
 bool digitAppears(int digit, int number);
 bool gcdDigitCondition(int a, int b);
 void playRoundPartTwo(Player *P1, Player *P2, bool *reachedThreshold);
-void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG, bool wonByThreshold);
+void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG, bool isWinner, bool wonByThreshold);
 bool forcedGameOver(int strategy2Rounds, int n);
 
 // Display functions
@@ -336,12 +336,8 @@ bool GetPlayer(Queue *F1, Queue *F, Queue *F3, Player *p, Stack *LP) {
         return true;
     }
     if (!EmptyQueue(*F3)) {
-        if (F3->head == F3->tail) {
-            Player last;
-            Dequeue(F3, &last);
-            PUSH(LP, last);
-            return false;
-        }
+        // Simply dequeue from F3, even if it's the last one
+        // The last player will be handled by the "remaining current player" logic
         Dequeue(F3, p);
         return true;
     }
@@ -390,10 +386,10 @@ void playRoundPartOne(Player *P1, Player *P2){
         printf("Sum of digits: %d\n", sum1);
 
         if(sum1 % 5 == 0){
-            printf(" %s scores! (+1)\n", P1->name);
+            printf("✓ %s scores! (+1)\n", P1->name);
             P1->currentScore++;
         } else {
-            printf(" %s scores nothing\n", P1->name);
+            printf("✗ %s scores nothing\n", P1->name);
         }
 
         printf("Current: %s=%d, %s=%d\n", P1->name, P1->currentScore, P2->name, P2->currentScore);
@@ -443,9 +439,9 @@ void classifyPartOne(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist
         Enqueue(F1, *P);
         printf("→ %s moved to Priority Queue F1 (3 consecutive wins)\n", P->name);
     }
-    else if (P->roundLost >= CONSECUTIVE_LOSS_THRESHOLD_PART1) {
+    else if (P->roundLost >= CONSECUTIVE_LOSS_THRESHOLD_PART1) {  
         Enqueue(F3, *P);
-        printf("→ %s moved to Queue F3 (3 losses)\n", P->name);
+        printf("→ %s moved to Queue F3 (3 losses)\n", P->name);  
     }
     else {
         Enqueue(F, *P);
@@ -569,23 +565,24 @@ void playRoundPartTwo(Player *P1, Player *P2, bool *reachedThreshold) {
     printf("=======================================\n");
 }
 
-void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG, bool wonByThreshold){
-    // Check for elimination first
-    if (P->roundLost >= LOSS_THRESHOLD_PART2) {
-        PUSH(LP, *P);
-        printf("→ %s ELIMINATED (2 losses in Part II)\n", P->name);
-        return;
-    }
-    
-    // Check for ultimate winner
+void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist *LG, bool isWinner, bool wonByThreshold){
+    // PRIORITY 1: Check for ultimate winner FIRST (2 consecutive wins in Part II)
     if (P->consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART2) {
         insertSortedLG(LG, *P);
         printf("→ %s WINS THE GAME! (2 consecutive wins in Part II)\n", P->name);
         return;
     }
     
-    // For winners in Part II
-    if (P->roundWon > P->roundLost) {
+    // PRIORITY 2: Check for elimination (2 losses in Part II only - fresh start!)
+    if (P->lossesPartII >= LOSS_THRESHOLD_PART2) {
+        PUSH(LP, *P);
+        printf("→ %s ELIMINATED (2 losses in Part II)\n", P->name);
+        return;
+    }
+    
+    // PRIORITY 3: For players who haven't won/lost enough - classify to queues
+    // For winners - classify based on how they won
+    if (isWinner) {
         if (wonByThreshold) {
             // Won by reaching 3-point difference -> goes to F1
             Enqueue(F1, *P);
@@ -596,7 +593,7 @@ void classifyPartTwo(Player *P, Queue *F, Queue *F1, Queue *F3, Stack *LP, Elist
             printf("→ %s moved to Queue F (won after 16 values)\n", P->name);
         }
     }
-    // For losers in Part II
+    // For losers - go to F3
     else {
         Enqueue(F3, *P);
         printf("→ %s moved to Queue F3 (lost in Part II)\n", P->name);
@@ -621,9 +618,10 @@ void displayQueue(Queue F, char* name) {
     element *current = F.head;
     int count = 0;
     while (current != NULL) {
-        printf("| %d. %s (ID:%d) W:%d L:%d Score:%d\n",
+        printf("| %d. %s (ID:%d) W:%d L:%d CW:%d Score:%d\n",
                ++count, current->info.name, current->info.playerID,
                current->info.roundWon, current->info.roundLost,
+               current->info.consecutiveWins,  // Added consecutive wins display
                current->info.totalScore);
         current = current->next;
     }
@@ -1093,8 +1091,16 @@ int main() {
         }
 
         // Select challenger
-        if (!GetPlayer(&F1, &F, &F3, &challenger, &LP))
+        if (!GetPlayer(&F1, &F, &F3, &challenger, &LP)) {
+            // No challenger available - only currentPlayer is left
+            // This player becomes a loser
+            if (hasCurrentPlayer) {
+                PUSH(&LP, currentPlayer);
+                printf("→ %s is the last remaining player - ELIMINATED\n", currentPlayer.name);
+                hasCurrentPlayer = false;
+            }
             break;
+        }
 
         // Record round start time
         time_t roundStart = time(NULL);
@@ -1137,18 +1143,21 @@ int main() {
         // Decide outcome and classify players
         if (currentPlayer.currentScore > challenger.currentScore) {
             if (strategy == 1) {
-                // Part I: Winner continues, loser is classified
+                // Part I: Loser is always classified
                 classifyPartOne(&challenger, &F, &F1, &F3, &LP, &LG);
-                // Check if the winner have 3 wins consecutivly 
-                if (currentPlayer.consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1) {
+                
+                // Check if winner should be classified (3 consecutive wins OR 5 total wins)
+                if (currentPlayer.consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1 || 
+                    currentPlayer.roundWon >= WIN_THRESHOLD_PART1) {
                     classifyPartOne(&currentPlayer, &F, &F1, &F3, &LP, &LG);
                     hasCurrentPlayer = false;  // Need new player
                 }
+                // Otherwise winner continues playing (hasCurrentPlayer stays true)
             } else {
                 // Part II: BOTH players are classified, NO ONE continues
-                classifyPartTwo(&challenger, &F, &F1, &F3, &LP, &LG, false); // Loser always gets false
-                classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG, reachedThreshold); // Winner status depends on threshold
-                hasCurrentPlayer = false; // NEW: Reset for next pair
+                classifyPartTwo(&challenger, &F, &F1, &F3, &LP, &LG, false, false); // Loser
+                classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG, true, reachedThreshold); // Winner
+                hasCurrentPlayer = false; // Reset for next pair
             }
         }
         else if (challenger.currentScore > currentPlayer.currentScore) {
@@ -1156,16 +1165,23 @@ int main() {
                 // Part I: Loser is always classified
                 classifyPartOne(&currentPlayer, &F, &F1, &F3, &LP, &LG);
                 
-                // Winner: check if they reached 3 consecutive wins
-                if (challenger.consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1) {
+                // Check if winner should be classified (3 consecutive wins OR 5 total wins)
+                if (challenger.consecutiveWins >= CONSECUTIVE_WIN_THRESHOLD_PART1 || 
+                    challenger.roundWon >= WIN_THRESHOLD_PART1) {
                     classifyPartOne(&challenger, &F, &F1, &F3, &LP, &LG);
                     hasCurrentPlayer = false;  // Need new player
                 } else {
                     // Challenger becomes the new current player
                     currentPlayer = challenger;
                 }
+            } else {
+                // Part II: BOTH players are classified, NO ONE continues
+                classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG, false, false); // Loser
+                classifyPartTwo(&challenger, &F, &F1, &F3, &LP, &LG, true, reachedThreshold); // Winner
+                hasCurrentPlayer = false; // Reset for next pair
             }
-        }else {
+        }
+        else {
             // Draw - both return to queue F
             Enqueue(&F, currentPlayer);
             Enqueue(&F, challenger);
@@ -1180,11 +1196,10 @@ int main() {
     }
 
     // Classify remaining current player if exists
+    // (This should rarely happen now since we handle it in the challenger selection)
     if (hasCurrentPlayer) {
-        if (strategy == 1)
-            classifyPartOne(&currentPlayer, &F, &F1, &F3, &LP, &LG);
-        else
-            classifyPartTwo(&currentPlayer, &F, &F1, &F3, &LP, &LG, false);
+        PUSH(&LP, currentPlayer);
+        printf("→ %s is the last remaining player - ELIMINATED\n", currentPlayer.name);
     }
 
     // Game end time
@@ -1227,8 +1242,16 @@ int main() {
         showPlayersByLossesPartII(LG, LP, i);
     }
 
-    // Display round history (optional - can be commented out if too long)
-    // displayRoundHistory(history);
+    // Display round history (optional - ask user)
+    printf("\n");
+    printf("Would you like to view the complete round history? (y/n): ");
+    char choice;
+    scanf(" %c", &choice);
+    getchar(); // Clear newline
+    
+    if (choice == 'y' || choice == 'Y') {
+        displayRoundHistory(history);
+    }
 
     // Fairness analysis
     printf("\n");
